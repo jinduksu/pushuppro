@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 
 // TypeScript declarations for the experimental ProximitySensor API.
@@ -35,44 +36,17 @@ const App: React.FC = () => {
     const sensor = useRef<ProximitySensor | null>(null);
     const lastDetectionTime = useRef<number>(0);
 
-    // Effect for initializing the sensor on component mount
+    // Effect to check for API support on mount and clean up sensor on unmount.
     useEffect(() => {
-        // The Proximity Sensor API is experimental and mainly available on Chrome for Android.
-        // It also requires a secure context (HTTPS).
         if (!('ProximitySensor' in window)) {
             setStatus('이 브라우저는 근접 센서 API를 지원하지 않습니다.');
             setIsSupported(false);
-            return;
-        }
-
-        try {
-            const proximitySensor = new ProximitySensor({ frequency: 10 });
-            sensor.current = proximitySensor;
-            
-            sensor.current.onerror = (event: any) => {
-                if (event.error.name === 'NotAllowedError') {
-                    setStatus('센서 사용 권한이 거부되었습니다.');
-                } else if (event.error.name === 'NotReadableError') {
-                    setStatus('지금은 센서를 사용할 수 없습니다.');
-                } else {
-                    setStatus('센서 오류: ' + event.error.name);
-                }
-                setIsSupported(false);
-            };
-
-            sensor.current.start();
+        } else {
             setStatus('준비 완료. "시작" 버튼을 눌러 시작하세요.');
-
-        } catch (error: any) {
-            if (error.name === 'SecurityError') {
-                 setStatus('센서를 사용하려면 보안 연결(HTTPS)이 필요합니다.');
-            } else {
-                 setStatus('센서를 초기화할 수 없습니다: ' + error.name);
-            }
-            setIsSupported(false);
         }
 
-        // Cleanup: stop the sensor when the component unmounts
+        // Cleanup: stop the sensor when the component unmounts.
+        // This will run regardless of when the sensor was initialized.
         return () => {
             if (sensor.current) {
                 sensor.current.stop();
@@ -114,12 +88,45 @@ const App: React.FC = () => {
         };
     }, [isCounting, handleReading]);
 
-    // Handler to toggle the counting state
-    const toggleCounting = () => {
+    // Handler to initialize the sensor and toggle the counting state
+    const toggleCounting = async () => {
         if (!isSupported) return;
+
+        // Initialize the sensor on the first click, which is a user gesture
+        if (!sensor.current) {
+            try {
+                setStatus('센서 권한을 요청합니다...');
+                const proximitySensor = new ProximitySensor({ frequency: 10 });
+                sensor.current = proximitySensor;
+                
+                sensor.current.onerror = (event: any) => {
+                    if (event.error.name === 'NotAllowedError') {
+                        setStatus('센서 사용 권한이 거부되었습니다.');
+                    } else if (event.error.name === 'NotReadableError') {
+                        setStatus('지금은 센서를 사용할 수 없습니다.');
+                    } else {
+                        setStatus('센서 오류: ' + event.error.name);
+                    }
+                    setIsSupported(false);
+                    sensor.current?.stop();
+                };
+
+                sensor.current.start();
+                
+            } catch (error: any) {
+                if (error.name === 'SecurityError') {
+                     setStatus('센서를 사용하려면 보안 연결(HTTPS)이 필요합니다.');
+                } else {
+                     setStatus('센서를 초기화할 수 없습니다: ' + error.name);
+                }
+                setIsSupported(false);
+                return; // Exit if initialization fails
+            }
+        }
+
         const nextIsCounting = !isCounting;
         setIsCounting(nextIsCounting);
-        if(!nextIsCounting) {
+        if (!nextIsCounting) {
             setStatus('일시정지됨. "시작" 버튼을 눌러 다시 시작하세요.');
         }
     };
